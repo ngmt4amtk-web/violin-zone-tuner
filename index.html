@@ -303,86 +303,69 @@ var CFG = {
 var STRICT_TOLERANCE = { easy: 14, normal: 7, strict: 3 };
 var PITCHES = [440, 441, 442, 443];
 
-// ===== ZONE TABLE =====
-// [semitones, etCents, zoneLow, zoneHigh, label]
-var ZONE_TABLE = [
-  [0,    0,    -7,   7,   'ユニゾン'],
-  [1,  100,   -17,  19,   '短2度'],
-  [2,  200,    -3,  11,   '長2度'],
-  [3,  300,   -13,  23,   '短3度'],
-  [4,  400,   -21,  15,   '長3度'],
-  [5,  500,    -9,   5,   '完全4度'],
-  [7,  700,    -5,   9,   '完全5度'],
-  [8,  800,   -15,  21,   '短6度'],
-  [9,  900,   -23,  13,   '長6度'],
-  [10, 1000,  -11,   3,   '短7度'],
-  [11, 1100,  -19,  17,   '長7度'],
-  [12, 1200,   -7,   7,   'オクターブ']
-];
+// ===== MIDI-BASED NOTE SYSTEM =====
+var KANA = ['ド','ド\u266F','レ','レ\u266F','ミ','ファ','ファ\u266F','ソ','ソ\u266F','ラ','ラ\u266F','シ'];
+var NAMES = ['C','C\u266F','D','D\u266F','E','F','F\u266F','G','G\u266F','A','A\u266F','B'];
+var STAFF_BASE = [0,0,1,1,2,3,3,4,4,5,5,6]; // staff position within octave
+var IS_SHARP = [false,true,false,true,false,false,true,false,true,false,true,false];
+var OPEN_MIDS = [55,62,69,76]; // G3,D4,A4,E5
+var STR_KEYS = ['G','D','A','E'];
+var STR_COLORS_ARR = ['#4f8cff','#f5a623','#e74c3c','#2ecc71'];
+var STR_NAMES_ARR = ['G線','D線','A線','E線'];
+var RANGE_BUFFER = 5; // cents buffer beyond JI/Pyth
 
 // JI / Pythagorean cent offsets from ET per interval
-var INTERVAL_TUNING = {
-  0:  {ji:  0, pyth:  0},
-  1:  {ji: 12, pyth:-10},
-  2:  {ji:  4, pyth:  4},
-  3:  {ji: 16, pyth: -6},
-  4:  {ji:-14, pyth:  8},
-  5:  {ji: -2, pyth: -2},
-  6:  {ji:-10, pyth: 12},
-  7:  {ji:  2, pyth:  2},
-  8:  {ji: 14, pyth: -8},
-  9:  {ji:-16, pyth:  6},
-  10: {ji: -4, pyth: -4},
-  11: {ji:-12, pyth: 10},
-  12: {ji:  0, pyth:  0}
-};
+var INTERVALS = [
+  {name:'ユニゾン',   ji:  0, pyth:  0},
+  {name:'短2度',     ji: 12, pyth:-10},
+  {name:'長2度',     ji:  4, pyth:  4},
+  {name:'短3度',     ji: 16, pyth: -6},
+  {name:'長3度',     ji:-14, pyth:  8},
+  {name:'完全4度',   ji: -2, pyth: -2},
+  {name:'増4度/減5度', ji:-10, pyth: 12},
+  {name:'完全5度',   ji:  2, pyth:  2},
+  {name:'短6度',     ji: 14, pyth: -8},
+  {name:'長6度',     ji:-16, pyth:  6},
+  {name:'短7度',     ji: -4, pyth: -4},
+  {name:'長7度',     ji:-12, pyth: 10}
+];
 
-// ===== OPEN STRINGS =====
-function calcStrFreqs(a4) {
-  return { G: a4*4/9, D: a4*2/3, A: a4, E: a4*3/2 };
+function midiInfo(midi){
+  var pc=((midi%12)+12)%12;
+  var oct=Math.floor(midi/12)-1;
+  return {midi:midi,pc:pc,oct:oct,kana:KANA[pc],name:NAMES[pc],sharp:IS_SHARP[pc],freq:midiToFreqET(midi)};
 }
-var STR_F = calcStrFreqs(CFG.a4);
-var STR_COLORS = { G:'#4f8cff', D:'#f5a623', A:'#e74c3c', E:'#2ecc71' };
-var STR_NAMES = { G:'G線', D:'D線', A:'A線', E:'E線' };
-var STR_KANA = { G:'ソ', D:'レ', A:'ラ', E:'ミ' };
-
-// Open string MIDI numbers
-var OPEN_MIDI = { G:55, D:62, A:69, E:76 };
-
-// ===== 1st POSITION NOTES =====
-function buildNotes(sf) {
-  return [
-    {b:'G',a:'',o:3,k:'ソ',sp:-5,hz:sf.G,p:[{s:'G',f:0}]},
-    {b:'A',a:'',o:3,k:'ラ',sp:-4,hz:sf.G*9/8,p:[{s:'G',f:1}]},
-    {b:'B',a:'',o:3,k:'シ',sp:-3,hz:sf.G*5/4,p:[{s:'G',f:2}]},
-    {b:'C',a:'',o:4,k:'ド',sp:-2,hz:sf.G*4/3,p:[{s:'G',f:3}]},
-    {b:'D',a:'',o:4,k:'レ',sp:-1,hz:sf.G*3/2,p:[{s:'G',f:4},{s:'D',f:0}]},
-    {b:'E',a:'',o:4,k:'ミ',sp:0,hz:sf.D*9/8,p:[{s:'D',f:1}]},
-    {b:'F',a:'\u266F',o:4,k:'ファ\u266F',sp:1,hz:sf.D*5/4,p:[{s:'D',f:2}]},
-    {b:'G',a:'',o:4,k:'ソ',sp:2,hz:sf.D*4/3,p:[{s:'D',f:3}]},
-    {b:'A',a:'',o:4,k:'ラ',sp:3,hz:sf.D*3/2,p:[{s:'A',f:0},{s:'D',f:4}]},
-    {b:'B',a:'',o:4,k:'シ',sp:4,hz:sf.A*9/8,p:[{s:'A',f:1}]},
-    {b:'C',a:'\u266F',o:5,k:'ド\u266F',sp:5,hz:sf.A*5/4,p:[{s:'A',f:2}]},
-    {b:'D',a:'',o:5,k:'レ',sp:6,hz:sf.A*4/3,p:[{s:'A',f:3}]},
-    {b:'E',a:'',o:5,k:'ミ',sp:7,hz:sf.A*3/2,p:[{s:'E',f:0},{s:'A',f:4}]},
-    {b:'F',a:'\u266F',o:5,k:'ファ\u266F',sp:8,hz:sf.E*9/8,p:[{s:'E',f:1}]},
-    {b:'G',a:'\u266F',o:5,k:'ソ\u266F',sp:9,hz:sf.E*5/4,p:[{s:'E',f:2}]},
-    {b:'A',a:'',o:5,k:'ラ',sp:10,hz:sf.E*4/3,p:[{s:'E',f:3}]},
-    {b:'B',a:'',o:5,k:'シ',sp:11,hz:sf.E*3/2,p:[{s:'E',f:4}]}
-  ];
+function staffPos(midi){
+  var pc=((midi%12)+12)%12;
+  var oct=Math.floor(midi/12)-1;
+  return (oct-4)*7+STAFF_BASE[pc]-2;
 }
-var NOTES = buildNotes(STR_F);
+function getStringIdx(midi){
+  for(var i=OPEN_MIDS.length-1;i>=0;i--){if(midi>=OPEN_MIDS[i])return i;}
+  return 0;
+}
+function getInterval(midi){
+  return (midi-OPEN_MIDS[getStringIdx(midi)])%12;
+}
+function getRange(midi){
+  var iv=getInterval(midi);
+  var data=INTERVALS[iv];
+  var lo=Math.min(0,data.ji,data.pyth)-RANGE_BUFFER;
+  var hi=Math.max(0,data.ji,data.pyth)+RANGE_BUFFER;
+  var et=midiToFreqET(midi);
+  return {lo:lo,hi:hi,loHz:et*Math.pow(2,lo/1200),hiHz:et*Math.pow(2,hi/1200),
+    etHz:et,ji:data.ji,pyth:data.pyth,ivName:data.name};
+}
 
 function refreshTuning() {
-  STR_F = calcStrFreqs(CFG.a4);
-  NOTES = buildNotes(STR_F);
+  // All frequencies computed on-the-fly from CFG.a4
 }
 
 // ===== STATE =====
 var audioCtx=null, analyser=null, audioBuf=null;
 var isRunning=false, curMode='check';
 var smoothPitch=0, silCnt=0;
-var lastNote=null, lastCentsFromET=null, lastZone=null, lastJudgment=null;
+var lastMidi=-1, lastCentsFromET=null, lastJudgment=null;
 
 // Staff / zone bar canvas contexts
 var staffCtx=null, zoneBarCtx=null, miniStaffCtx=null;
@@ -450,101 +433,51 @@ function centsCalc(f,t){return 1200*Math.log2(f/t);}
 function freqToMidi(f){return 69+12*Math.log2(f/CFG.a4);}
 function midiToFreqET(m){return CFG.a4*Math.pow(2,(m-69)/12);}
 
-function closest(f){
-  var best=null,bc=Infinity;
-  for(var i=0;i<NOTES.length;i++){
-    var c=Math.abs(centsCalc(f,NOTES[i].hz));
-    if(c<bc){bc=c;best=NOTES[i];}
-  }
-  return best;
-}
-
-// Determine reference open string from frequency
-function getOpenString(f) {
+// Detect MIDI from frequency (G3-G6 range)
+function detectMidi(f){
   var midi=Math.round(freqToMidi(f));
-  if(midi<59) return 'G';       // below midpoint G-D
-  if(midi<66) return 'D';       // below midpoint D-A
-  if(midi<73) return 'A';       // below midpoint A-E
-  return 'E';
-}
-
-// Get interval in semitones from open string
-function getIntervalSemitones(f, openStr) {
-  var openFreq=STR_F[openStr];
-  var intervalCents=centsCalc(f, openFreq);
-  var semitones=Math.round(intervalCents/100);
-  if(semitones<0) semitones=0;
-  if(semitones>12) semitones=12;
-  return semitones;
-}
-
-// Look up zone for given semitone count
-function lookupZone(semitones) {
-  for(var i=0;i<ZONE_TABLE.length;i++){
-    if(ZONE_TABLE[i][0]===semitones) return ZONE_TABLE[i];
-  }
-  // Tritone (6) - use nearest
-  if(semitones===6) return [6, 600, -20, 20, '増4度'];
-  return null;
+  if(midi<55||midi>91) return -1;
+  return midi;
 }
 
 // Calculate cents from ET for a given frequency
-function centsFromET(f) {
+function centsFromET(f){
   var midi=Math.round(freqToMidi(f));
   var etFreq=midiToFreqET(midi);
-  return centsCalc(f, etFreq);
+  return centsCalc(f,etFreq);
 }
 
 // Full judgment pipeline
-function judgeNote(f) {
-  var openStr=getOpenString(f);
-  var semitones=getIntervalSemitones(f, openStr);
-  var zone=lookupZone(semitones);
-  if(!zone) return null;
+function judgeNote(f){
+  var midi=detectMidi(f);
+  if(midi<0) return null;
+  var range=getRange(midi);
   var cfe=centsFromET(f);
   var tol=STRICT_TOLERANCE[CFG.strictness];
   var judgment;
-  if(cfe>=zone[2]&&cfe<=zone[3]){
+  if(cfe>=range.lo&&cfe<=range.hi){
     judgment='green';
-  } else {
-    var distToZone=Math.min(Math.abs(cfe-zone[2]),Math.abs(cfe-zone[3]));
+  }else{
+    var distToZone=Math.min(Math.abs(cfe-range.lo),Math.abs(cfe-range.hi));
     judgment=distToZone<=tol?'yellow':'red';
   }
-  var zoneCenter=(zone[2]+zone[3])/2;
-  var tuning=INTERVAL_TUNING[semitones]||{ji:0,pyth:0};
+  var zoneCenter=(range.lo+range.hi)/2;
+  var strIdx=getStringIdx(midi);
   return {
-    openStr:openStr,
-    semitones:semitones,
-    zone:zone,
+    midi:midi,
+    openStr:STR_KEYS[strIdx],
+    strIdx:strIdx,
+    semitones:getInterval(midi),
+    zoneLo:range.lo,
+    zoneHi:range.hi,
+    ivName:range.ivName,
     centsFromET:cfe,
     zoneCenter:zoneCenter,
     deviation:cfe-zoneCenter,
     judgment:judgment,
-    ji:tuning.ji,
-    pyth:tuning.pyth
+    ji:range.ji,
+    pyth:range.pyth
   };
-}
-
-// Judgment text for check mode
-function judgmentText(result) {
-  if(!result) return {text:'',color:'#445'};
-  var cfe=result.centsFromET;
-  var z=result.zone;
-  var zc=result.zoneCenter;
-  if(result.judgment==='green'){
-    var pos=cfe-zc;
-    if(pos<-2) return {text:'正解ゾーン内！ 低め寄り',color:'#2ecc71'};
-    if(pos>2) return {text:'正解ゾーン内！ 高め寄り',color:'#2ecc71'};
-    return {text:'正解ゾーン内！ ピアノの音程',color:'#2ecc71'};
-  }
-  if(result.judgment==='yellow'){
-    return cfe<z[2]
-      ? {text:'惜しい！ もう少し高く',color:'#f5a623'}
-      : {text:'惜しい！ もう少し低く',color:'#f5a623'};
-  }
-  return cfe<z[2]
-    ? {text:'\u2191 低い',color:'#e74c3c'}
-    : {text:'\u2193 高い',color:'#e74c3c'};
 }
 
 // ===== CANVAS HELPERS =====
@@ -628,53 +561,46 @@ function updCheck(f){
   var dt=document.getElementById('checkDetected');
   if(f===null){
     ns.style.display='block';dt.style.display='none';
-    lastNote=null;lastZone=null;lastJudgment=null;lastCentsFromET=null;
-    drawStaff(null);drawZoneBar(null,null);return;
+    lastMidi=-1;lastJudgment=null;lastCentsFromET=null;
+    drawStaff(-1);drawZoneBar(null,null);return;
   }
   ns.style.display='none';dt.style.display='block';
-  var n=closest(f);if(!n){drawStaff(null);drawZoneBar(null,null);return;}
-  lastNote=n;
   var result=judgeNote(f);
-  lastCentsFromET=result?result.centsFromET:0;
-  lastZone=result?result.zone:null;
-  lastJudgment=result?result.judgment:null;
+  if(!result){drawStaff(-1);drawZoneBar(null,null);return;}
+  var midi=result.midi;
+  lastMidi=midi;
+  lastCentsFromET=result.centsFromET;
+  lastJudgment=result.judgment;
+  var info=midiInfo(midi);
 
   // Note name — color by string
-  var strColor=n.p.length>0?STR_COLORS[n.p[0].s]:'#eef';
-  document.getElementById('checkKana').textContent=n.k;
+  var strColor=STR_COLORS_ARR[result.strIdx];
+  document.getElementById('checkKana').textContent=info.kana;
   document.getElementById('checkKana').style.color=strColor;
-  document.getElementById('checkName').textContent=n.b+(n.a||'')+n.o;
+  document.getElementById('checkName').textContent=info.name+info.oct;
 
-  // Positions
-  var h='';
-  for(var i=0;i<n.p.length;i++){
-    var pp=n.p[i],sc=STR_COLORS[pp.s];
-    if(i>0)h+='<span style="color:#334;margin:0 4px">/</span>';
-    h+='<span class="pos-pill" style="background:'+sc+'18;border:1px solid '+sc+'30">';
-    h+='<span class="pos-dot" style="background:'+sc+'"></span>';
-    h+='<span style="color:'+sc+'">'+STR_NAMES[pp.s]+' '+pp.f+'指</span></span>';
-  }
+  // String pill
+  var sc=STR_COLORS_ARR[result.strIdx];
+  var h='<span class="pos-pill" style="background:'+sc+'18;border:1px solid '+sc+'30">';
+  h+='<span class="pos-dot" style="background:'+sc+'"></span>';
+  h+='<span style="color:'+sc+'">'+STR_NAMES_ARR[result.strIdx]+'</span></span>';
+  h+='<span style="color:#556;font-size:12px;margin-left:8px">'+result.ivName+'</span>';
   document.getElementById('checkPositions').innerHTML=h;
 
   // Hz display (large, colored by position)
-  var cfe=result?result.centsFromET:0;
-  var inZone=result&&result.judgment==='green';
+  var cfe=result.centsFromET;
   var posText,posClass;
-  if(result){
-    if(inZone){
-      var z=result.zone;
-      var zc=result.zoneCenter;
-      if(cfe-zc<-2){posText='低め';posClass='pos-low';}
-      else if(cfe-zc>2){posText='高め';posClass='pos-high';}
-      else{posText='ピアノ寄り';posClass='pos-piano';}
-    }else if(result.judgment==='yellow'){
-      posText=cfe<result.zone[2]?'↑ もう少し高く':'↓ もう少し低く';
-      posClass='pos-low';
-    }else{
-      posText=cfe<result.zone[2]?'↑ 低い':'↓ 高い';
-      posClass='pos-out';
-    }
-  }else{posText='';posClass='pos-silent';}
+  if(result.judgment==='green'){
+    if(cfe-result.zoneCenter<-2){posText='低め';posClass='pos-low';}
+    else if(cfe-result.zoneCenter>2){posText='高め';posClass='pos-high';}
+    else{posText='ピアノ寄り';posClass='pos-piano';}
+  }else if(result.judgment==='yellow'){
+    posText=cfe<result.zoneLo?'↑ もう少し高く':'↓ もう少し低く';
+    posClass='pos-low';
+  }else{
+    posText=cfe<result.zoneLo?'↑ 低い':'↓ 高い';
+    posClass='pos-out';
+  }
 
   var freqEl=document.getElementById('checkFreq');
   freqEl.textContent=f.toFixed(1)+' Hz';
@@ -686,7 +612,7 @@ function updCheck(f){
   // Cents
   document.getElementById('checkCentsText').textContent=(cfe>=0?'+':'')+cfe.toFixed(1)+' cent';
 
-  drawStaff(n);
+  drawStaff(midi);
   drawZoneBar(result,cfe);
 }
 
@@ -699,45 +625,46 @@ function setupStaff(){
   var pw=c.parentElement.clientWidth-36;
   sW=Math.max(pw,200);sH=190;
   staffCtx=dprCanvas(c,sW,sH);
-  drawStaff(lastNote);
+  drawStaff(lastMidi);
 }
 
-function drawStaff(note){
+function drawStaff(midi){
   var ctx=staffCtx;if(!ctx)return;
   ctx.clearRect(0,0,sW,sH);
   var sl=50,sr=sW-16;
   var bly=sH*0.72;
-  // 5 staff lines
   ctx.strokeStyle='#2a2d44';ctx.lineWidth=1;
   for(var i=0;i<5;i++){
     var y=bly-i*LS;
     ctx.beginPath();ctx.moveTo(sl,y);ctx.lineTo(sr,y);ctx.stroke();
   }
   drawClef(ctx,sl,bly);
-  if(!note)return;
+  if(midi<0)return;
+  var sp=staffPos(midi);
+  var info=midiInfo(midi);
   var nx=(sl+sr)/2+8;
-  var ny=staffY(note.sp,bly);
+  var ny=staffY(sp,bly);
   var nr=HS*1.3;
   // ledger lines
   ctx.strokeStyle='#3a3d55';ctx.lineWidth=1;
-  if(note.sp<0){
-    for(var p=-2;p>=note.sp-(note.sp%2===0?0:1);p-=2){
+  if(sp<0){
+    for(var p=-2;p>=sp-(sp%2===0?0:1);p-=2){
       var ly=staffY(p,bly);
       ctx.beginPath();ctx.moveTo(nx-nr*2,ly);ctx.lineTo(nx+nr*2,ly);ctx.stroke();
     }
   }
-  if(note.sp>8){
-    for(var p=10;p<=note.sp+(note.sp%2===0?0:1);p+=2){
+  if(sp>8){
+    for(var p=10;p<=sp+(sp%2===0?0:1);p+=2){
       var ly=staffY(p,bly);
       ctx.beginPath();ctx.moveTo(nx-nr*2,ly);ctx.lineTo(nx+nr*2,ly);ctx.stroke();
     }
   }
   // accidental
-  if(note.a==='\u266F'){
+  if(info.sharp){
     drawSharp(ctx,nx-nr-10,ny,LS,'#aab');
   }
   // note head — color by string
-  var headCol=note.p&&note.p.length>0?STR_COLORS[note.p[0].s]:'#eef';
+  var headCol=STR_COLORS_ARR[getStringIdx(midi)];
   ctx.save();
   ctx.translate(nx,ny);ctx.rotate(-0.3);
   ctx.beginPath();ctx.ellipse(0,0,nr,nr*0.72,0,0,Math.PI*2);
@@ -747,7 +674,7 @@ function drawStaff(note){
   var sh=LS*3.5;
   ctx.strokeStyle=headCol;ctx.lineWidth=1.5;
   ctx.beginPath();
-  if(note.sp<4){ctx.moveTo(nx+nr*0.9,ny);ctx.lineTo(nx+nr*0.9,ny-sh);}
+  if(sp<4){ctx.moveTo(nx+nr*0.9,ny);ctx.lineTo(nx+nr*0.9,ny-sh);}
   else{ctx.moveTo(nx-nr*0.9,ny);ctx.lineTo(nx-nr*0.9,ny+sh);}
   ctx.stroke();
 }
@@ -791,7 +718,7 @@ function drawSharp(ctx,x,y,ls,color){
 function setupZoneBar(){
   var c=document.getElementById('zoneBarCanvas');
   var pw=c.parentElement.clientWidth-36;
-  zbW=Math.max(pw,200);zbH=100;
+  zbW=Math.max(pw,200);zbH=115;
   zoneBarCtx=dprCanvas(c,zbW,zbH);
   drawZoneBar(null,null);
 }
@@ -817,10 +744,9 @@ function drawZoneBar(result,cfe){
   }
 
   // Zone highlight (if we have zone data)
-  if(result&&result.zone){
-    var z=result.zone;
-    var zl=ml+mw*(z[2]+50)/100;
-    var zr=ml+mw*(z[3]+50)/100;
+  if(result&&result.zoneLo!==undefined){
+    var zl=ml+mw*(result.zoneLo+50)/100;
+    var zr=ml+mw*(result.zoneHi+50)/100;
     ctx.fillStyle='rgba(46,204,113,0.12)';
     ctx.beginPath();ctx.roundRect(zl,cy-20,zr-zl,40,[4]);ctx.fill();
     // zone boundary lines
@@ -833,20 +759,33 @@ function drawZoneBar(result,cfe){
       {off:0,label:'ET',col:'#778'},
       {off:result.pyth,label:'ピタゴラス',col:'#4f8cff'}
     ];
+    // Draw lines for all markers
     for(var i=0;i<refs.length;i++){
       var rx=ml+mw*(refs[i].off+50)/100;
       ctx.strokeStyle=refs[i].col;ctx.lineWidth=1.5;ctx.globalAlpha=0.7;
       ctx.beginPath();ctx.moveTo(rx,cy-14);ctx.lineTo(rx,cy+14);ctx.stroke();
-      ctx.globalAlpha=0.5;
-      ctx.fillStyle=refs[i].col;ctx.font='9px -apple-system,sans-serif';
-      ctx.textAlign='center';ctx.textBaseline='top';
-      ctx.fillText(refs[i].label,rx,cy+17);
       ctx.globalAlpha=1;
     }
+    // Draw labels with collision avoidance
+    var labels=refs.map(function(r){
+      return {x:ml+mw*(r.off+50)/100,label:r.label,col:r.col,y:cy+17};
+    }).sort(function(a,b){return a.x-b.x;});
+    var minGap=36;
+    for(var i=1;i<labels.length;i++){
+      if(Math.abs(labels[i].x-labels[i-1].x)<minGap){
+        labels[i].y=labels[i-1].y+11;
+      }
+    }
+    ctx.font='9px -apple-system,sans-serif';ctx.textAlign='center';ctx.textBaseline='top';
+    for(var i=0;i<labels.length;i++){
+      ctx.globalAlpha=0.6;ctx.fillStyle=labels[i].col;
+      ctx.fillText(labels[i].label,labels[i].x,labels[i].y);
+    }
+    ctx.globalAlpha=1;
     // Zone label
     ctx.fillStyle='#556';ctx.font='11px -apple-system,sans-serif';
     ctx.textAlign='center';ctx.textBaseline='bottom';
-    ctx.fillText(z[4]+' (幅'+(z[3]-z[2])+'c)',ml+mw/2,cy-24);
+    ctx.fillText(result.ivName+' (幅'+(result.zoneHi-result.zoneLo)+'c)',ml+mw/2,cy-24);
   } else {
     // Default: show a generic zone
     var gw=mw*0.14;
@@ -886,8 +825,7 @@ function toggleRefTone(){
     stopRefTone();return;
   }
   if(!audioCtx)return;
-  var n=lastNote;
-  var freq=n?n.hz:CFG.a4;
+  var freq=lastMidi>=0?midiToFreqET(lastMidi):CFG.a4;
   refOsc=audioCtx.createOscillator();
   refGain=audioCtx.createGain();
   refOsc.type='sine';
@@ -960,31 +898,30 @@ function formatTime(ms){
 }
 
 function updPractice(f){
-  if(f===null){drawMiniStaff(null);return;}
-  var n=closest(f);
-  if(!n){drawMiniStaff(null);return;}
+  if(f===null){drawMiniStaff(-1);return;}
   var result=judgeNote(f);
-  if(!result){drawMiniStaff(null);return;}
-  drawMiniStaff(n);
+  if(!result){drawMiniStaff(-1);return;}
+  var midi=result.midi;
+  var info=midiInfo(midi);
+  drawMiniStaff(midi);
   // Record event
   var t=performance.now()-recStartTime;
-  var midi=Math.round(freqToMidi(f));
   recEvents.push({
     time:t,
     freq:f,
     midi:midi,
-    noteName:n.k,
-    noteNameWestern:n.b+(n.a||'')+n.o,
+    noteName:info.kana,
+    noteNameWestern:info.name+info.oct,
     centsFromET:result.centsFromET,
     intervalSemitones:result.semitones,
     openString:result.openStr,
-    zoneLow:result.zone[2],
-    zoneHigh:result.zone[3],
+    zoneLow:result.zoneLo,
+    zoneHigh:result.zoneHi,
     zoneCenter:result.zoneCenter,
     deviation:result.deviation,
     judgment:result.judgment,
-    sp:n.sp,
-    acc:n.a
+    sp:staffPos(midi),
+    acc:info.sharp?'\u266F':''
   });
   drawLiveTimeline();
 }
@@ -998,7 +935,7 @@ function setupMiniStaff(){
   drawMiniStaff(null);
 }
 
-function drawMiniStaff(note){
+function drawMiniStaff(midi){
   var ctx=miniStaffCtx;if(!ctx)return;
   ctx.clearRect(0,0,msW,msH);
   var ls=10,hs=5;
@@ -1018,36 +955,39 @@ function drawMiniStaff(note){
   var m=ctx.measureText('\uD834\uDD1E');
   if(m.width>2){ctx.fillText('\uD834\uDD1E',sl+2,gLineY+fs*0.36);}
   ctx.restore();
-  if(!note)return;
+  if(midi<0)return;
+  var sp=staffPos(midi);
+  var info=midiInfo(midi);
   var nx=(sl+sr)/2+6;
-  var ny=bly-note.sp*hs;
+  var ny=bly-sp*hs;
   var nr=hs*1.3;
   // ledger
   ctx.strokeStyle='#3a3d55';ctx.lineWidth=1;
-  if(note.sp<0){
-    for(var p=-2;p>=note.sp-(note.sp%2===0?0:1);p-=2){
+  if(sp<0){
+    for(var p=-2;p>=sp-(sp%2===0?0:1);p-=2){
       var ly=bly-p*hs;
       ctx.beginPath();ctx.moveTo(nx-nr*2,ly);ctx.lineTo(nx+nr*2,ly);ctx.stroke();
     }
   }
-  if(note.sp>8){
-    for(var p=10;p<=note.sp+(note.sp%2===0?0:1);p+=2){
+  if(sp>8){
+    for(var p=10;p<=sp+(sp%2===0?0:1);p+=2){
       var ly=bly-p*hs;
       ctx.beginPath();ctx.moveTo(nx-nr*2,ly);ctx.lineTo(nx+nr*2,ly);ctx.stroke();
     }
   }
-  if(note.a==='\u266F'){
+  if(info.sharp){
     drawSharp(ctx,nx-nr-8,ny,ls,'#aab');
   }
+  var headCol=STR_COLORS_ARR[getStringIdx(midi)];
   ctx.save();
   ctx.translate(nx,ny);ctx.rotate(-0.3);
   ctx.beginPath();ctx.ellipse(0,0,nr,nr*0.72,0,0,Math.PI*2);
-  ctx.fillStyle='#eef';ctx.fill();
+  ctx.fillStyle=headCol;ctx.fill();
   ctx.restore();
   var sh=ls*3.5;
-  ctx.strokeStyle='#eef';ctx.lineWidth=1.2;
+  ctx.strokeStyle=headCol;ctx.lineWidth=1.2;
   ctx.beginPath();
-  if(note.sp<4){ctx.moveTo(nx+nr*0.9,ny);ctx.lineTo(nx+nr*0.9,ny-sh);}
+  if(sp<4){ctx.moveTo(nx+nr*0.9,ny);ctx.lineTo(nx+nr*0.9,ny-sh);}
   else{ctx.moveTo(nx-nr*0.9,ny);ctx.lineTo(nx-nr*0.9,ny+sh);}
   ctx.stroke();
 }
