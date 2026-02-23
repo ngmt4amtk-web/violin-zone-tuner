@@ -67,8 +67,14 @@ html,body{
 .pos-pill{display:inline-flex;align-items:center;gap:5px;padding:5px 12px;border-radius:16px;font-size:14px;font-weight:600}
 .pos-dot{width:8px;height:8px;border-radius:4px;flex-shrink:0}
 .check-judgment{text-align:center;font-size:17px;font-weight:600;margin:6px 0;min-height:26px}
-.check-cents{text-align:center;font-size:14px;color:#99a;margin:4px 0}
-.check-freq{text-align:center;font-size:12px;color:#445}
+.check-cents{text-align:center;font-size:12px;color:#556;margin:4px 0}
+.check-freq{text-align:center;font-size:32px;font-weight:800;line-height:1;margin:8px 0 4px}
+.check-pos{text-align:center;font-size:18px;font-weight:700;margin:6px 0;min-height:26px}
+.pos-low{color:#f5a623}
+.pos-piano{color:#2ecc71}
+.pos-high{color:#4f8cff}
+.pos-out{color:#e74c3c}
+.pos-silent{color:#334}
 .no-sound{color:#445;font-size:16px;text-align:center;padding:36px 0}
 #staffCanvas,#zoneBarCanvas{display:block;margin:0 auto}
 
@@ -179,9 +185,9 @@ html,body{
             <div class="check-name" id="checkName"></div>
           </div>
           <div class="check-positions" id="checkPositions"></div>
-          <div class="check-judgment" id="checkJudgment"></div>
-          <div class="check-cents" id="checkCentsText"></div>
           <div class="check-freq" id="checkFreq"></div>
+          <div class="check-pos" id="checkPos"></div>
+          <div class="check-cents" id="checkCentsText"></div>
         </div>
       </div>
       <div class="card">
@@ -313,6 +319,23 @@ var ZONE_TABLE = [
   [11, 1100,  -19,  17,   '長7度'],
   [12, 1200,   -7,   7,   'オクターブ']
 ];
+
+// JI / Pythagorean cent offsets from ET per interval
+var INTERVAL_TUNING = {
+  0:  {ji:  0, pyth:  0},
+  1:  {ji: 12, pyth:-10},
+  2:  {ji:  4, pyth:  4},
+  3:  {ji: 16, pyth: -6},
+  4:  {ji:-14, pyth:  8},
+  5:  {ji: -2, pyth: -2},
+  6:  {ji:-10, pyth: 12},
+  7:  {ji:  2, pyth:  2},
+  8:  {ji: 14, pyth: -8},
+  9:  {ji:-16, pyth:  6},
+  10: {ji: -4, pyth: -4},
+  11: {ji:-12, pyth: 10},
+  12: {ji:  0, pyth:  0}
+};
 
 // ===== OPEN STRINGS =====
 function calcStrFreqs(a4) {
@@ -488,6 +511,7 @@ function judgeNote(f) {
     judgment=distToZone<=tol?'yellow':'red';
   }
   var zoneCenter=(zone[2]+zone[3])/2;
+  var tuning=INTERVAL_TUNING[semitones]||{ji:0,pyth:0};
   return {
     openStr:openStr,
     semitones:semitones,
@@ -495,7 +519,9 @@ function judgeNote(f) {
     centsFromET:cfe,
     zoneCenter:zoneCenter,
     deviation:cfe-zoneCenter,
-    judgment:judgment
+    judgment:judgment,
+    ji:tuning.ji,
+    pyth:tuning.pyth
   };
 }
 
@@ -572,20 +598,22 @@ async function startAudio(){
 // ===== MAIN LOOP =====
 function tick(){
   if(!isRunning)return;
-  analyser.getFloatTimeDomainData(audioBuf);
-  var r=rms(audioBuf);
-  if(r<0.01){
-    silCnt++;
-    if(silCnt>15){smoothPitch=0;update(null);}
-  }else{
-    silCnt=0;
-    var f=yin(audioBuf,audioCtx.sampleRate);
-    if(f>170&&f<3000){
-      if(smoothPitch===0||Math.abs(centsCalc(f,smoothPitch))>80) smoothPitch=f;
-      else smoothPitch=smoothPitch*0.7+f*0.3;
-      update(smoothPitch);
+  try{
+    analyser.getFloatTimeDomainData(audioBuf);
+    var r=rms(audioBuf);
+    if(r<0.01){
+      silCnt++;
+      if(silCnt>15){smoothPitch=0;update(null);}
+    }else{
+      silCnt=0;
+      var f=yin(audioBuf,audioCtx.sampleRate);
+      if(f>170&&f<3000){
+        if(smoothPitch===0||Math.abs(centsCalc(f,smoothPitch))>80) smoothPitch=f;
+        else smoothPitch=smoothPitch*0.7+f*0.3;
+        update(smoothPitch);
+      }
     }
-  }
+  }catch(e){}
   requestAnimationFrame(tick);
 }
 
@@ -611,9 +639,10 @@ function updCheck(f){
   lastZone=result?result.zone:null;
   lastJudgment=result?result.judgment:null;
 
+  // Note name — color by string
+  var strColor=n.p.length>0?STR_COLORS[n.p[0].s]:'#eef';
   document.getElementById('checkKana').textContent=n.k;
-  document.getElementById('checkKana').style.color=result?
-    (result.judgment==='green'?'#2ecc71':result.judgment==='yellow'?'#f5a623':'#e74c3c'):'#fff';
+  document.getElementById('checkKana').style.color=strColor;
   document.getElementById('checkName').textContent=n.b+(n.a||'')+n.o;
 
   // Positions
@@ -627,15 +656,35 @@ function updCheck(f){
   }
   document.getElementById('checkPositions').innerHTML=h;
 
-  // Judgment
-  var jt=judgmentText(result);
-  var jEl=document.getElementById('checkJudgment');
-  jEl.textContent=jt.text;jEl.style.color=jt.color;
+  // Hz display (large, colored by position)
+  var cfe=result?result.centsFromET:0;
+  var inZone=result&&result.judgment==='green';
+  var posText,posClass;
+  if(result){
+    if(inZone){
+      var z=result.zone;
+      var zc=result.zoneCenter;
+      if(cfe-zc<-2){posText='低め';posClass='pos-low';}
+      else if(cfe-zc>2){posText='高め';posClass='pos-high';}
+      else{posText='ピアノ寄り';posClass='pos-piano';}
+    }else if(result.judgment==='yellow'){
+      posText=cfe<result.zone[2]?'↑ もう少し高く':'↓ もう少し低く';
+      posClass='pos-low';
+    }else{
+      posText=cfe<result.zone[2]?'↑ 低い':'↓ 高い';
+      posClass='pos-out';
+    }
+  }else{posText='';posClass='pos-silent';}
+
+  var freqEl=document.getElementById('checkFreq');
+  freqEl.textContent=f.toFixed(1)+' Hz';
+  freqEl.className='check-freq '+posClass;
+  var posEl=document.getElementById('checkPos');
+  posEl.textContent=posText;
+  posEl.className='check-pos '+posClass;
 
   // Cents
-  var cfe=result?result.centsFromET:0;
-  document.getElementById('checkCentsText').textContent=(cfe>=0?'+':'')+cfe.toFixed(1)+' cent (ET比)';
-  document.getElementById('checkFreq').textContent=f.toFixed(1)+' Hz';
+  document.getElementById('checkCentsText').textContent=(cfe>=0?'+':'')+cfe.toFixed(1)+' cent';
 
   drawStaff(n);
   drawZoneBar(result,cfe);
@@ -687,15 +736,16 @@ function drawStaff(note){
   if(note.a==='\u266F'){
     drawSharp(ctx,nx-nr-10,ny,LS,'#aab');
   }
-  // note head
+  // note head — color by string
+  var headCol=note.p&&note.p.length>0?STR_COLORS[note.p[0].s]:'#eef';
   ctx.save();
   ctx.translate(nx,ny);ctx.rotate(-0.3);
   ctx.beginPath();ctx.ellipse(0,0,nr,nr*0.72,0,0,Math.PI*2);
-  ctx.fillStyle='#eef';ctx.fill();
+  ctx.fillStyle=headCol;ctx.fill();
   ctx.restore();
   // stem
   var sh=LS*3.5;
-  ctx.strokeStyle='#eef';ctx.lineWidth=1.5;
+  ctx.strokeStyle=headCol;ctx.lineWidth=1.5;
   ctx.beginPath();
   if(note.sp<4){ctx.moveTo(nx+nr*0.9,ny);ctx.lineTo(nx+nr*0.9,ny-sh);}
   else{ctx.moveTo(nx-nr*0.9,ny);ctx.lineTo(nx-nr*0.9,ny+sh);}
@@ -772,28 +822,26 @@ function drawZoneBar(result,cfe){
     var zl=ml+mw*(z[2]+50)/100;
     var zr=ml+mw*(z[3]+50)/100;
     ctx.fillStyle='rgba(46,204,113,0.12)';
-    ctx.beginPath();ctx.roundRect(zl,cy-20,zr-zl,40,[3]);ctx.fill();
+    ctx.beginPath();ctx.roundRect(zl,cy-20,zr-zl,40,[4]);ctx.fill();
     // zone boundary lines
     ctx.strokeStyle='#2ecc7140';ctx.lineWidth=1;
-    ctx.beginPath();ctx.moveTo(zl,cy-20);ctx.lineTo(zl,cy+20);ctx.stroke();
-    ctx.beginPath();ctx.moveTo(zr,cy-20);ctx.lineTo(zr,cy+20);ctx.stroke();
+    ctx.beginPath();ctx.roundRect(zl,cy-20,zr-zl,40,[4]);ctx.stroke();
 
-    // markers: low(Just), center(Piano/ET), high(Pyth)
-    var zc=(z[2]+z[3])/2;
-    var markers=[
-      {pos:z[2]+3,label:'低め',color:'#4f8cff'},
-      {pos:0,label:'ピアノ',color:'#778'},
-      {pos:z[3]-3,label:'高め',color:'#f5a623'}
+    // JI / ET / Pythagorean markers
+    var refs=[
+      {off:result.ji,label:'純正律',col:'#f5a623'},
+      {off:0,label:'ET',col:'#778'},
+      {off:result.pyth,label:'ピタゴラス',col:'#4f8cff'}
     ];
-    ctx.font='10px -apple-system,sans-serif';ctx.textBaseline='top';ctx.textAlign='center';
-    for(var i=0;i<markers.length;i++){
-      var mx2=ml+mw*(markers[i].pos+50)/100;
-      if(mx2>=zl&&mx2<=zr){
-        ctx.fillStyle=markers[i].color+'80';
-        ctx.beginPath();ctx.arc(mx2,cy,2,0,Math.PI*2);ctx.fill();
-        ctx.fillStyle=markers[i].color;
-        ctx.fillText(markers[i].label,mx2,cy+24);
-      }
+    for(var i=0;i<refs.length;i++){
+      var rx=ml+mw*(refs[i].off+50)/100;
+      ctx.strokeStyle=refs[i].col;ctx.lineWidth=1.5;ctx.globalAlpha=0.7;
+      ctx.beginPath();ctx.moveTo(rx,cy-14);ctx.lineTo(rx,cy+14);ctx.stroke();
+      ctx.globalAlpha=0.5;
+      ctx.fillStyle=refs[i].col;ctx.font='9px -apple-system,sans-serif';
+      ctx.textAlign='center';ctx.textBaseline='top';
+      ctx.fillText(refs[i].label,rx,cy+17);
+      ctx.globalAlpha=1;
     }
     // Zone label
     ctx.fillStyle='#556';ctx.font='11px -apple-system,sans-serif';
@@ -870,6 +918,7 @@ function stopRefTone(){
 function startRecording(){
   recEvents=[];
   recStartTime=performance.now();
+  smoothPitch=0;silCnt=0;
   recState='recording';
   document.getElementById('practiceIdle').style.display='none';
   document.getElementById('practiceRecording').style.display='block';
@@ -1570,6 +1619,13 @@ document.addEventListener('click',function(e){
     hideDetailPopup();
   }
 });
+// iOS AudioContext resume
+document.addEventListener('visibilitychange',function(){
+  if(audioCtx&&!document.hidden) audioCtx.resume();
+});
+document.addEventListener('touchstart',function(){
+  if(audioCtx&&audioCtx.state==='suspended') audioCtx.resume();
+},{passive:true});
 
 })();
 </script>
