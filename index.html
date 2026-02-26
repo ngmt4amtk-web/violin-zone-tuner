@@ -391,7 +391,7 @@ var DB_NAME='ZoneTunerSessions', DB_VER=1, STORE='sessions', MAX_SESSIONS=30;
 
 // ===== YIN ALGORITHM =====
 function yin(buf, sr) {
-  var th=0.15, half=Math.floor(buf.length/2);
+  var th=0.20, half=Math.floor(buf.length/2);
   var tMin=Math.floor(sr/3000), tMax=Math.min(Math.ceil(sr/170), half);
   if(tMin<1) tMin=1;
   var diff=new Float32Array(half);
@@ -511,7 +511,7 @@ async function startAudio(){
     });
     var src=audioCtx.createMediaStreamSource(stream);
     analyser=audioCtx.createAnalyser();
-    analyser.fftSize=4096;
+    analyser.fftSize=8192;
     src.connect(analyser);
     audioBuf=new Float32Array(analyser.fftSize);
     isRunning=true;
